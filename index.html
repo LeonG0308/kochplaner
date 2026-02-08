@@ -242,6 +242,40 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg width='10
   .modal-overlay{align-items:center}.modal{border-radius:var(--radius-xl);max-height:82vh;padding-bottom:22px}
   .recipe-grid{grid-template-columns:1fr 1fr}
 }
+/* ═══ VOICE AI ═══ */
+.voice-fab{position:fixed;bottom:calc(var(--tab-height) + env(safe-area-inset-bottom,0px) + 14px);right:14px;z-index:90;width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,#E07A3A,#C4612A);color:#fff;border:none;cursor:pointer;box-shadow:0 4px 20px rgba(224,122,58,0.4);display:flex;align-items:center;justify-content:center;font-size:1.5rem;transition:all .3s;-webkit-tap-highlight-color:transparent}
+.voice-fab:hover{transform:scale(1.08);box-shadow:0 6px 28px rgba(224,122,58,0.5)}
+.voice-fab.listening{animation:fabPulse 1.5s infinite;background:linear-gradient(135deg,#D9534F,#c0392b)}
+@keyframes fabPulse{0%,100%{box-shadow:0 4px 20px rgba(217,83,79,0.4)}50%{box-shadow:0 4px 30px rgba(217,83,79,0.7),0 0 0 12px rgba(217,83,79,0.15)}}
+
+.voice-overlay{position:fixed;inset:0;z-index:250;background:rgba(250,246,241,0.97);backdrop-filter:blur(20px);display:none;flex-direction:column}
+.voice-overlay.open{display:flex}
+.voice-header{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--border)}
+.voice-header h2{font-family:var(--font-display);font-size:1.15rem;display:flex;align-items:center;gap:8px}
+.voice-close{background:none;border:none;font-size:1.3rem;cursor:pointer;color:var(--text-secondary);width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center}
+.voice-close:hover{background:var(--border)}
+
+.voice-chat{flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:10px}
+.voice-msg{max-width:85%;padding:11px 15px;border-radius:16px;font-size:.88rem;line-height:1.5;animation:fadeIn .3s ease}
+.voice-msg.ai{align-self:flex-start;background:var(--bg-card);border:1px solid var(--border);border-bottom-left-radius:4px}
+.voice-msg.user{align-self:flex-end;background:var(--primary);color:#fff;border-bottom-right-radius:4px}
+.voice-msg.system{align-self:center;background:var(--bg-accent);color:var(--primary-dark);font-size:.78rem;padding:6px 14px;border-radius:20px}
+.voice-msg .action-badge{display:inline-flex;align-items:center;gap:4px;background:var(--green-light);color:var(--green);padding:2px 8px;border-radius:6px;font-size:.72rem;font-weight:600;margin-top:6px}
+
+.voice-controls{padding:14px 16px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px;background:var(--bg-card)}
+.voice-mic-btn{width:56px;height:56px;border-radius:50%;border:none;cursor:pointer;font-size:1.5rem;transition:all .2s;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.voice-mic-btn.idle{background:var(--primary);color:#fff}
+.voice-mic-btn.recording{background:#D9534F;color:#fff;animation:fabPulse 1.5s infinite}
+.voice-mic-btn.thinking{background:var(--border);color:var(--text-muted)}
+.voice-input-text{flex:1;display:flex;gap:6px}
+.voice-input-text input{flex:1}
+.voice-input-text button{flex-shrink:0}
+.voice-transcript{flex:1;font-size:.85rem;color:var(--text-secondary);min-height:20px;display:flex;align-items:center}
+.voice-transcript.active{color:var(--text);font-weight:500}
+.voice-wave{display:flex;align-items:center;gap:2px;height:24px}
+.voice-wave span{width:3px;background:var(--red);border-radius:2px;animation:wave .6s ease-in-out infinite}
+.voice-wave span:nth-child(2){animation-delay:.1s}.voice-wave span:nth-child(3){animation-delay:.2s}.voice-wave span:nth-child(4){animation-delay:.3s}.voice-wave span:nth-child(5){animation-delay:.15s}
+@keyframes wave{0%,100%{height:4px}50%{height:20px}}
 </style>
 </head>
 <body>
@@ -261,6 +295,29 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg width='10
 </nav>
 
 <div class="toast-container" id="toast-container"></div>
+
+<!-- VOICE AI FAB -->
+<button class="voice-fab" id="voice-fab" onclick="toggleVoiceOverlay()" title="Sprach-KI">🎙️</button>
+
+<!-- VOICE AI OVERLAY -->
+<div class="voice-overlay" id="voice-overlay">
+  <div class="voice-header">
+    <h2>🎙️ Koch-Assistentin</h2>
+    <div style="display:flex;gap:6px">
+      <button class="voice-close" onclick="clearVoiceChat()" title="Chat löschen">🗑️</button>
+      <button class="voice-close" onclick="toggleVoiceOverlay()" title="Schließen">✕</button>
+    </div>
+  </div>
+  <div class="voice-chat" id="voice-chat"></div>
+  <div class="voice-controls">
+    <button class="voice-mic-btn idle" id="voice-mic-btn" onclick="toggleVoiceRecording()">🎙️</button>
+    <div id="voice-status" class="voice-transcript">Tippe auf 🎙️ zum Sprechen</div>
+    <div class="voice-input-text">
+      <input type="text" class="input" id="voice-text-input" placeholder="Oder hier tippen..." style="font-size:.85rem;padding:10px 12px" onkeydown="if(event.key==='Enter')sendVoiceText()">
+      <button class="btn btn-primary btn-sm" onclick="sendVoiceText()" style="padding:10px 14px">↑</button>
+    </div>
+  </div>
+</div>
 
 <main class="main-content">
 
@@ -967,8 +1024,346 @@ function showSettings(){document.getElementById('setting-default-portions').valu
 document.getElementById('setting-default-portions').addEventListener('change',function(){defaultPortions=parseInt(this.value)||2;save()});
 function confirmResetAll(){showConfirm('Alles löschen','Wirklich ALLE Daten löschen? Das betrifft beide Nutzer!',async()=>{recipes=[];weekPlans={};floatingMeals=[];savedLists=[];cart=[];defaultPortions=2;save();closeModal('modal-settings');renderAll();toast('Alles zurückgesetzt')})}
 
-// PWA
-if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js').catch(e=>console.log('SW:',e))}
+// ═══════════════════════════════════════
+// 🎙️ VOICE AI ASSISTANT
+// ═══════════════════════════════════════
+let voiceMessages=[];
+let voiceRecognition=null;
+let voiceIsListening=false;
+let voiceIsSpeaking=false;
+let voiceIsProcessing=false;
+
+// --- Speech Recognition (STT) ---
+function initSpeechRecognition(){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){toast('Spracherkennung nicht unterstützt');return null}
+  const r=new SR();
+  r.lang='de-DE';r.continuous=false;r.interimResults=true;
+  r.onresult=e=>{
+    let final='',interim='';
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      if(e.results[i].isFinal)final+=e.results[i][0].transcript;
+      else interim+=e.results[i][0].transcript;
+    }
+    const status=document.getElementById('voice-status');
+    if(final){status.textContent=final;status.className='voice-transcript active'}
+    else if(interim){status.textContent=interim;status.className='voice-transcript active'}
+  };
+  r.onend=()=>{
+    const status=document.getElementById('voice-status');
+    const text=status.textContent.trim();
+    voiceIsListening=false;
+    updateMicButton('idle');
+    if(text&&text!=='Tippe auf 🎙️ zum Sprechen'&&!voiceIsProcessing){
+      processVoiceInput(text);
+    }
+  };
+  r.onerror=e=>{
+    voiceIsListening=false;updateMicButton('idle');
+    if(e.error!=='no-speech'&&e.error!=='aborted')toast('Mikrofon-Fehler: '+e.error);
+  };
+  return r;
+}
+
+function updateMicButton(state){
+  const btn=document.getElementById('voice-mic-btn');
+  btn.className='voice-mic-btn '+state;
+  btn.textContent=state==='recording'?'⏹️':state==='thinking'?'⏳':'🎙️';
+}
+
+function toggleVoiceRecording(){
+  if(voiceIsProcessing)return;
+  if(voiceIsSpeaking){window.speechSynthesis?.cancel();if(currentAudio){currentAudio.pause();currentAudio=null}voiceIsSpeaking=false}
+  if(voiceIsListening){
+    voiceRecognition?.stop();voiceIsListening=false;updateMicButton('idle');return;
+  }
+  if(!voiceRecognition)voiceRecognition=initSpeechRecognition();
+  if(!voiceRecognition)return;
+  try{
+    document.getElementById('voice-status').textContent='Höre zu...';
+    document.getElementById('voice-status').className='voice-transcript';
+    voiceRecognition.start();voiceIsListening=true;updateMicButton('recording');
+  }catch(e){console.warn('Mic:',e)}
+}
+
+// --- Speech Synthesis (TTS) via OpenAI ---
+const OPENAI_TTS_KEY='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'; // ← Hier OpenAI API-Key eintragen
+let currentAudio=null;
+
+function speak(text){
+  return new Promise(async resolve=>{
+    if(!text||text.length<2){resolve();return}
+    const clean=text.replace(/[*_#`]/g,'').replace(/<[^>]*>/g,'').replace(/\n+/g,' ').substring(0,4000).trim();
+    if(!clean){resolve();return}
+
+    // Check if OpenAI key is set
+    if(!OPENAI_TTS_KEY||OPENAI_TTS_KEY==='DEIN_OPENAI_KEY'){
+      // Fallback to browser TTS
+      if(!window.speechSynthesis){resolve();return}
+      window.speechSynthesis.cancel();
+      const utter=new SpeechSynthesisUtterance(clean.substring(0,800));
+      utter.lang='de-DE';utter.rate=1.05;
+      const voices=window.speechSynthesis.getVoices();
+      const deVoice=voices.find(v=>v.lang.startsWith('de')&&v.name.includes('Anna'))||voices.find(v=>v.lang.startsWith('de'));
+      if(deVoice)utter.voice=deVoice;
+      voiceIsSpeaking=true;
+      utter.onend=()=>{voiceIsSpeaking=false;resolve()};
+      utter.onerror=()=>{voiceIsSpeaking=false;resolve()};
+      window.speechSynthesis.speak(utter);
+      return;
+    }
+
+    try{
+      voiceIsSpeaking=true;
+      const res=await fetch('https://api.openai.com/v1/audio/speech',{
+        method:'POST',
+        headers:{'Authorization':'Bearer '+OPENAI_TTS_KEY,'Content-Type':'application/json'},
+        body:JSON.stringify({model:'tts-1',voice:'nova',input:clean,response_format:'mp3',speed:1.05})
+      });
+      if(!res.ok)throw new Error('TTS error '+res.status);
+      const blob=await res.blob();
+      const url=URL.createObjectURL(blob);
+      if(currentAudio){currentAudio.pause();URL.revokeObjectURL(currentAudio.src)}
+      currentAudio=new Audio(url);
+      currentAudio.onended=()=>{voiceIsSpeaking=false;URL.revokeObjectURL(url);resolve()};
+      currentAudio.onerror=()=>{voiceIsSpeaking=false;URL.revokeObjectURL(url);resolve()};
+      currentAudio.play().catch(()=>{voiceIsSpeaking=false;resolve()});
+    }catch(e){
+      console.warn('OpenAI TTS error, falling back:',e);
+      voiceIsSpeaking=false;
+      // Fallback to browser TTS
+      if(window.speechSynthesis){
+        const utter=new SpeechSynthesisUtterance(clean.substring(0,800));
+        utter.lang='de-DE';utter.rate=1.05;
+        utter.onend=()=>resolve();utter.onerror=()=>resolve();
+        window.speechSynthesis.speak(utter);
+      }else resolve();
+    }
+  });
+}
+
+// --- Voice UI ---
+function toggleVoiceOverlay(){
+  const o=document.getElementById('voice-overlay');
+  o.classList.toggle('open');
+  document.getElementById('voice-fab').classList.toggle('hidden',o.classList.contains('open'));
+  if(o.classList.contains('open')&&!voiceMessages.length){
+    addVoiceMessage('ai','Hallo! 👋 Ich bin deine Koch-Assistentin. Ich kenne alle deine Rezepte, deinen Wochenplan und deine Einkaufslisten.\n\nWas möchtest du machen? Du kannst mir zum Beispiel sagen:\n• „Plan die Woche für mich"\n• „Was hab ich im Warenkorb?"\n• „Füg Pasta Arrabiata für Montag ein"\n• „Erstelle eine Einkaufsliste"');
+  }
+}
+function addVoiceMessage(role,text){
+  voiceMessages.push({role,text});
+  const chat=document.getElementById('voice-chat');
+  const div=document.createElement('div');
+  div.className='voice-msg '+role;
+  div.innerHTML=text.replace(/\n/g,'<br>');
+  chat.appendChild(div);
+  chat.scrollTop=chat.scrollHeight;
+}
+function clearVoiceChat(){
+  voiceMessages=[];
+  document.getElementById('voice-chat').innerHTML='';
+  addVoiceMessage('ai','Chat gelöscht. Wie kann ich dir helfen?');
+}
+function sendVoiceText(){
+  const input=document.getElementById('voice-text-input');
+  const text=input.value.trim();if(!text)return;
+  input.value='';processVoiceInput(text);
+}
+
+// --- Build context for Claude ---
+function buildVoiceContext(){
+  const days=getWeekDates(currentWeekOffset);
+  const weekKey=`${fmtDate(days[0].date)} – ${fmtDate(days[6].date)}`;
+
+  let ctx=`Du bist die Koch-Assistentin im Kochplaner. Alles ist vegetarisch.
+Antworte auf Deutsch, kurz und freundlich (max 3-4 Sätze pro Antwort).
+Heute ist ${new Date().toLocaleDateString('de-DE',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}.
+Aktuelle Woche: ${weekKey}
+
+═══ REZEPTE (${recipes.length}) ═══
+${recipes.map(r=>`• ${r.emoji} ${r.name} [ID:${r.id}] – ${r.category} | Tags: ${r.tags?[r.tags.time,r.tags.weight,r.tags.cuisine,...(r.tags.extra_tags||[])].filter(Boolean).join(', '):'?'} | Zutaten: ${(r.ingredients||[]).map(i=>i.name).join(', ')}`).join('\n')}
+
+═══ WOCHENPLAN ═══
+${days.map(d=>{const meals=(weekPlans[d.key]||{}).meals||[];return`${d.name} ${fmtDate(d.date)}${d.isToday?' (HEUTE)':''}: ${meals.length?meals.map(m=>{const r=recipes.find(x=>x.id===m.recipeId);return r?`${r.emoji} ${r.name} (${m.portions}P)`:'?'}).join(', '):'— frei —'}`}).join('\n')}
+${floatingMeals.length?`Immer/Sonstiges: ${floatingMeals.map(m=>{const r=recipes.find(x=>x.id===m.recipeId);return r?`${r.emoji} ${r.name} (${m.portions}P)`:''}).filter(Boolean).join(', ')}`:''}
+
+═══ WARENKORB (${cart.length} Artikel) ═══
+${cart.length?cart.map(i=>`${i.checked?'✅':'☐'} ${i.name}: ${fmtAmt(i.amount)} ${i.unit}`).join('\n'):'Leer'}
+
+═══ EINKAUFSLISTEN (${savedLists.length}) ═══
+${savedLists.map(l=>`• ${l.name} [ID:${l.id}] – ${l.items.length} Artikel`).join('\n')||'Keine'}
+
+Standard-Portionen: ${defaultPortions}
+
+═══ TOOL-AUFRUFE ═══
+Wenn der Nutzer möchte dass du etwas ÄNDERST, antworte mit einem JSON-Block:
+\`\`\`actions
+[{"action":"add_meal","day":"YYYY-MM-DD","recipeId":"...","portions":2},
+{"action":"remove_meal","day":"YYYY-MM-DD","mealIndex":0},
+{"action":"add_to_cart","recipeId":"...","portions":2},
+{"action":"clear_cart"},
+{"action":"check_cart_item","name":"..."},
+{"action":"generate_list","days":["YYYY-MM-DD"],"name":"..."},
+{"action":"add_floating","recipeId":"...","portions":2},
+{"action":"remove_floating","index":0}]
+\`\`\`
+Nutze die Wochentage der AKTUELLEN Woche (${days.map(d=>`${d.name}=${d.key}`).join(', ')}).
+Du MUSST gültige recipeIds verwenden. Nur was oben steht existiert.
+Schreibe VOR dem JSON-Block eine kurze Bestätigung was du tust.
+`;
+  return ctx;
+}
+
+// --- Process user input ---
+async function processVoiceInput(text){
+  if(voiceIsProcessing)return;
+  voiceIsProcessing=true;
+  addVoiceMessage('user',text);
+  updateMicButton('thinking');
+  document.getElementById('voice-status').textContent='Denke nach...';
+
+  try{
+    const systemCtx=buildVoiceContext();
+    // Build conversation history (last 10 messages for context)
+    const history=voiceMessages.slice(-12).map(m=>({
+      role:m.role==='user'?'user':'assistant',
+      content:m.text
+    }));
+    // Remove last user msg (we add it fresh)
+    if(history.length&&history[history.length-1].role==='user')history.pop();
+
+    const messages=[...history,{role:'user',content:text}];
+
+    const res=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':API_KEY,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({
+        model:'claude-sonnet-4-20250514',
+        max_tokens:1500,
+        system:systemCtx,
+        messages
+      })
+    });
+    if(!res.ok)throw new Error('API-Fehler');
+    const data=await res.json();
+    let reply=data.content.map(c=>c.text||'').join('');
+
+    // Execute actions if present
+    const actionMatch=reply.match(/```actions\s*([\s\S]*?)```/);
+    if(actionMatch){
+      try{
+        const actions=JSON.parse(actionMatch[1].trim());
+        const results=executeVoiceActions(actions);
+        reply=reply.replace(/```actions[\s\S]*?```/,'').trim();
+        if(results.length)reply+='\n'+results.map(r=>`<div class="action-badge">✅ ${r}</div>`).join('');
+      }catch(e){console.warn('Action parse error:',e)}
+    }
+
+    addVoiceMessage('ai',reply);
+
+    // Speak the response (clean version without HTML)
+    const speakText=reply.replace(/<[^>]*>/g,'').replace(/\n+/g,' ').trim();
+    await speak(speakText);
+
+  }catch(e){
+    console.error('Voice AI error:',e);
+    addVoiceMessage('ai','Entschuldigung, da ist ein Fehler aufgetreten. Versuche es nochmal! 🙏');
+  }
+
+  voiceIsProcessing=false;
+  updateMicButton('idle');
+  document.getElementById('voice-status').textContent='Tippe auf 🎙️ zum Sprechen';
+}
+
+// --- Execute actions from Claude ---
+function executeVoiceActions(actions){
+  const results=[];
+  actions.forEach(a=>{
+    try{
+      switch(a.action){
+        case 'add_meal':{
+          const r=recipes.find(x=>x.id===a.recipeId);if(!r)break;
+          if(!weekPlans[a.day])weekPlans[a.day]={meals:[]};
+          weekPlans[a.day].meals.push({recipeId:a.recipeId,portions:a.portions||defaultPortions});
+          results.push(`${r.emoji} ${r.name} → ${a.day}`);
+          break;
+        }
+        case 'remove_meal':{
+          if(weekPlans[a.day]?.meals){
+            const removed=weekPlans[a.day].meals.splice(a.mealIndex,1);
+            if(!weekPlans[a.day].meals.length)delete weekPlans[a.day];
+            results.push(`Gericht entfernt von ${a.day}`);
+          }
+          break;
+        }
+        case 'add_to_cart':{
+          const r=recipes.find(x=>x.id===a.recipeId);if(!r)break;
+          const p=a.portions||defaultPortions;
+          (r.ingredients||[]).forEach(ing=>{
+            const key=makeKey(ing.name,ing.unit);const amt=(parseFloat(ing.amount)||0)*p;
+            const ex=cart.find(c=>c.key===key);
+            if(ex)ex.amount+=amt;else cart.push({id:genId(),key,name:ing.name,amount:amt,unit:ing.unit,checked:false});
+          });
+          results.push(`${r.emoji} ${r.name} → Warenkorb (${p}P)`);
+          break;
+        }
+        case 'clear_cart':{
+          cart=[];results.push('Warenkorb geleert');break;
+        }
+        case 'check_cart_item':{
+          const item=cart.find(c=>c.name.toLowerCase().includes(a.name.toLowerCase()));
+          if(item){item.checked=true;results.push(`${item.name} abgehakt ✓`)}
+          break;
+        }
+        case 'generate_list':{
+          const agg={};
+          (a.days||[]).forEach(dk=>{
+            (weekPlans[dk]?.meals||[]).forEach(m=>{
+              const r=recipes.find(x=>x.id===m.recipeId);if(!r)return;
+              r.ingredients.forEach(ing=>{
+                const k=makeKey(ing.name,ing.unit);const amt=(parseFloat(ing.amount)||0)*m.portions;
+                if(agg[k])agg[k].amount+=amt;else agg[k]={id:genId(),key:k,name:ing.name,amount:amt,unit:ing.unit,checked:false};
+              });
+            });
+          });
+          const items=Object.values(agg).sort((x,y)=>x.name.localeCompare(y.name,'de'));
+          if(items.length){
+            savedLists.unshift({id:genId(),name:a.name||'Einkauf',items,date:new Date().toISOString()});
+            results.push(`Liste "${a.name||'Einkauf'}" mit ${items.length} Artikeln erstellt`);
+          }
+          break;
+        }
+        case 'add_floating':{
+          const r=recipes.find(x=>x.id===a.recipeId);if(!r)break;
+          floatingMeals.push({recipeId:a.recipeId,portions:a.portions||defaultPortions});
+          results.push(`${r.emoji} ${r.name} → Immer/Sonstiges`);
+          break;
+        }
+        case 'remove_floating':{
+          if(floatingMeals[a.index]){floatingMeals.splice(a.index,1);results.push('Entfernt aus Immer/Sonstiges')}
+          break;
+        }
+      }
+    }catch(e){console.warn('Action exec error:',e)}
+  });
+  if(results.length){save();renderAll()}
+  return results;
+}
+
+// Init voices
+if(window.speechSynthesis){speechSynthesis.onvoiceschanged=()=>speechSynthesis.getVoices()}
+
+// PWA - Force update & clear old caches
+if('serviceWorker' in navigator){
+  // Clear ALL caches first to break old SW cycle
+  caches.keys().then(keys=>keys.forEach(k=>caches.delete(k)));
+  navigator.serviceWorker.getRegistrations().then(regs=>{
+    regs.forEach(r=>r.unregister());
+    // Re-register with cache buster
+    setTimeout(()=>navigator.serviceWorker.register('sw.js?v=6').catch(e=>console.log('SW:',e)),1000);
+  });
+}
 
 // INIT
 initFirebase();
