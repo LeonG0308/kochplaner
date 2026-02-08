@@ -1,4 +1,4 @@
-const CACHE_NAME = 'kochplaner-v3';
+const CACHE_NAME = 'kochplaner-v4';
 const PRECACHE = [
   './',
   './index.html',
@@ -22,10 +22,23 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
-  // Network first for API calls and Firebase
+  // Skip API calls and Firebase
   if (e.request.url.includes('api.anthropic.com') || 
       e.request.url.includes('firestore.googleapis.com') ||
       e.request.url.includes('firebase')) {
+    return;
+  }
+  // Network first for HTML (so updates always show)
+  if (e.request.mode === 'navigate' || e.request.url.endsWith('.html') || e.request.url.endsWith('/')) {
+    e.respondWith(
+      fetch(e.request).then(res => {
+        if (res.ok) {
+          const clone = res.clone();
+          caches.open(CACHE_NAME).then(c => c.put(e.request, clone));
+        }
+        return res;
+      }).catch(() => caches.match(e.request).then(r => r || caches.match('./index.html')))
+    );
     return;
   }
   // Cache first for static assets
