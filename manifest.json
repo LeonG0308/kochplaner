@@ -1,0 +1,19 @@
+{
+  "name": "Kochplaner – Hofmannstraße",
+  "short_name": "Kochplaner",
+  "description": "Vegetarischer Kochplaner für zwei",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#FAF6F1",
+  "theme_color": "#E07A3A",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
