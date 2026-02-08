@@ -1,4 +1,4 @@
-const CACHE_NAME = 'kochplaner-v4';
+const CACHE_NAME = 'kochplaner-v6';
 const PRECACHE = [
   './',
   './index.html',
