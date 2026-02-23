@@ -447,6 +447,7 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg width='10
   <div id="import-tab-image" class="hidden">
     <div class="upload-zone" id="upload-zone"><div class="uz-icon">📸</div><div class="uz-text">Bilder antippen oder hierher ziehen<br><small>Mehrere Bilder möglich</small></div><input type="file" accept="image/*" multiple onchange="handleImageUpload(event)" id="image-input"></div>
     <div class="image-previews" id="image-previews"></div>
+    <div class="input-group mt-8"><label>Hinweise zum Bild (optional)</label><textarea id="ai-image-notes" rows="2" placeholder="z.B.: Nur die linke Seite, für 2 Personen, ohne Käse..."></textarea></div>
   </div>
   <div id="import-tab-url" class="hidden">
     <div class="input-group"><label>Rezept-URL</label><input type="text" class="input" id="ai-recipe-url" placeholder="https://www.chefkoch.de/rezepte/..."></div>
@@ -795,7 +796,7 @@ async function saveRecipe(){
 // ═══════════════════════════════════════
 // AI RECIPE IMPORT
 // ═══════════════════════════════════════
-function openAIRecipeModal(){document.getElementById('ai-recipe-input').value='';document.getElementById('ai-recipe-name').value='';document.getElementById('ai-recipe-url').value='';document.getElementById('ai-recipe-result').classList.add('hidden');document.getElementById('ai-import-status').classList.add('hidden');uploadedImages=[];renderImagePreviews();aiExtractedRecipe=null;switchImportTab('text');openModal('modal-ai-recipe')}
+function openAIRecipeModal(){document.getElementById('ai-recipe-input').value='';document.getElementById('ai-recipe-name').value='';document.getElementById('ai-recipe-url').value='';document.getElementById('ai-image-notes').value='';document.getElementById('ai-recipe-result').classList.add('hidden');document.getElementById('ai-import-status').classList.add('hidden');uploadedImages=[];renderImagePreviews();aiExtractedRecipe=null;switchImportTab('text');openModal('modal-ai-recipe')}
 function switchImportTab(tab){document.querySelectorAll('.inner-tab').forEach(t=>t.classList.remove('active'));document.querySelectorAll('[id^="import-tab-"]').forEach(t=>t.classList.add('hidden'));const idx=tab==='text'?0:tab==='image'?1:2;document.querySelectorAll('.inner-tab')[idx].classList.add('active');document.getElementById('import-tab-'+tab).classList.remove('hidden')}
 function handleImageUpload(e){[...e.target.files].forEach(file=>{const reader=new FileReader();reader.onload=ev=>{uploadedImages.push({base64:ev.target.result.split(',')[1],preview:ev.target.result});renderImagePreviews()};reader.readAsDataURL(file)});e.target.value=''}
 function removeUploadedImage(idx){uploadedImages.splice(idx,1);renderImagePreviews()}
@@ -813,7 +814,7 @@ async function aiExtractRecipe(){
   const btn=document.getElementById('ai-extract-btn');btn.innerHTML='<span class="spinner"></span> Analysiere...';btn.disabled=true;document.getElementById('ai-recipe-result').classList.add('hidden');
   try{let response;const activeIdx=[...document.querySelectorAll('.inner-tab')].findIndex(t=>t.classList.contains('active'));
     if(activeIdx===0){const text=document.getElementById('ai-recipe-input').value.trim();if(!text){toast('Bitte Text eingeben');throw new Error('skip')}response=await callClaude(RECIPE_PARSE_PROMPT+'\n\nRezepttext:\n'+text)}
-    else if(activeIdx===1){if(!uploadedImages.length){toast('Bitte Bilder hochladen');throw new Error('skip')}setImportStatus('loading','<span class="spinner"></span> Bilder werden analysiert...');response=await callClaude(RECIPE_PARSE_PROMPT+'\n\nAnalysiere das Rezept in den Bildern.',uploadedImages.map(i=>i.base64))}
+    else if(activeIdx===1){if(!uploadedImages.length){toast('Bitte Bilder hochladen');throw new Error('skip')}setImportStatus('loading','<span class="spinner"></span> Bilder werden analysiert...');const imgNotes=document.getElementById('ai-image-notes').value.trim();const imgPrompt=RECIPE_PARSE_PROMPT+'\n\nAnalysiere das Rezept in den Bildern.'+(imgNotes?'\n\n⚠️ WICHTIGE HINWEISE VOM NUTZER (streng beachten!):\n'+imgNotes:'');response=await callClaude(imgPrompt,uploadedImages.map(i=>i.base64))}
     // (Änderung 7) URL-Import mit Sonnet 4.5 Thinking + Web Search
     else{
       const url=document.getElementById('ai-recipe-url').value.trim();
@@ -1418,7 +1419,7 @@ if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations().then(regs=>{
     regs.forEach(r=>r.unregister());
     // Re-register with cache buster
-    setTimeout(()=>navigator.serviceWorker.register('sw.js?v=7').catch(e=>console.log('SW:',e)),1000);
+    setTimeout(()=>navigator.serviceWorker.register('sw.js?v=8').catch(e=>console.log('SW:',e)),1000);
   });
 }
 
