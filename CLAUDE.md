@@ -80,6 +80,10 @@ zurückgeschrieben. Deshalb gelten diese Regeln – sie dürfen nie wieder aufge
    Datenbank fehlen, bietet sie diese per Banner zum Zurückholen an. Wiederherstellungen
    **ergänzen** immer nur (`mergeRecipes`) und löschen nie.
 8. `confirmResetAll` fasst die Rezepte nicht mehr an – ein Ein-Klick-Totalverlust ist unmöglich.
+9. **Beim Bearbeiten nie Felder verlieren**: `saveRecipe()` baut das Rezept-Objekt neu auf. Jedes
+   Feld, das dort fehlt, wird beim Speichern gelöscht – genau so gingen bis 31.08.2026 die `steps`
+   verloren. Wer dem Rezept ein Feld hinzufügt, muss es in `saveRecipe()`, `editRecipe()` und
+   `openAddRecipeModal()` mitführen.
 
 ## API-Keys
 
