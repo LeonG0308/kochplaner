@@ -534,12 +534,18 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg width='10
   <div class="input-group"><label>Lieferdienst</label><input type="text" class="input" value="Knuspr (München)" disabled style="opacity:.6"></div>
   <div class="divider"></div>
   <p class="section-label" style="margin-bottom:8px">🔑 API-Keys</p>
-  <p style="font-size:.75rem;color:var(--text-muted);margin-bottom:10px">Mindestens einen Key eintragen. Keys werden nur lokal auf deinem Gerät gespeichert.</p>
+  <p style="font-size:.75rem;color:var(--text-muted);margin-bottom:10px">Einmal eintragen genügt – der Key wird automatisch auf allen Geräten hinterlegt.</p>
+  <div id="key-sync-status" style="font-size:.75rem;margin-bottom:10px;font-weight:600"></div>
   <div class="input-group"><label>Claude API-Key <span style="font-size:.7rem;color:var(--text-muted)">(Anthropic)</span></label><input type="password" class="input" id="setting-claude-key" placeholder="sk-ant-api03-..." style="font-family:var(--font-mono);font-size:.78rem"></div>
   <div class="input-group"><label>OpenAI API-Key <span style="font-size:.7rem;color:var(--text-muted)">(optional, für TTS)</span></label><input type="password" class="input" id="setting-openai-key" placeholder="sk-proj-..." style="font-family:var(--font-mono);font-size:.78rem"></div>
   <button class="btn btn-primary btn-full" onclick="saveApiKeys()">💾 Keys speichern</button>
   <button class="btn btn-secondary btn-full mt-8" onclick="testApiKey()">🧪 Claude-Key testen</button>
   <div id="key-status" style="font-size:.78rem;margin-top:6px;text-align:center"></div>
+  <button class="btn btn-ghost btn-full mt-8" onclick="removeKeysEverywhere()" style="font-size:.8rem">🚫 Keys von allen Geräten entfernen</button>
+  <div class="divider"></div>
+  <p class="section-label" style="margin-bottom:8px">🛟 Sicherung</p>
+  <p id="backup-status" style="font-size:.75rem;color:var(--text-muted);margin-bottom:10px"></p>
+  <button class="btn btn-secondary btn-full" onclick="restoreBackupFromSettings()">↩️ Letzte Sicherung wiederherstellen</button>
   <div class="divider"></div>
   <button class="btn btn-danger btn-full" onclick="confirmResetAll()">🗑️ Alle Daten zurücksetzen</button>
   <button class="btn btn-ghost btn-full mt-8" onclick="closeModal('modal-settings')">Schließen</button>
@@ -573,17 +579,63 @@ const DOC_REF = db.collection('app').doc('shared');
 // ═══════════════════════════════════════
 // CONFIG & STATE
 // ═══════════════════════════════════════
-// API Keys from localStorage (no hardcoded keys!)
-function getApiKey(){return localStorage.getItem('kp_claude_key')||''}
-function getOpenAIKey(){return localStorage.getItem('kp_openai_key')||''}
+// ─────────────────────────────────────────────────────────────
+// API-KEYS – geräteübergreifend
+// Keys stehen NIE im Code (das Repo ist öffentlich, Anthropic widerruft
+// gepushte Keys automatisch). Sie liegen verschleiert in Firestore unter
+// app/config und werden zusätzlich lokal gespiegelt, damit die App auch
+// offline weiterarbeitet. Einmal eintragen genügt – alle Geräte ziehen nach.
+// ─────────────────────────────────────────────────────────────
+const CFG_REF = db.collection('app').doc('config');
+let sharedKeys={claude:'',openai:''};
+const KP_PAD='kp7f3qz9';
+function obf(s){if(!s)return'';let o='';for(let i=0;i<s.length;i++)o+=String.fromCharCode(s.charCodeAt(i)^KP_PAD.charCodeAt(i%KP_PAD.length));try{return btoa(o)}catch(e){return''}}
+function deobf(s){if(!s)return'';try{const r=atob(s);let o='';for(let i=0;i<r.length;i++)o+=String.fromCharCode(r.charCodeAt(i)^KP_PAD.charCodeAt(i%KP_PAD.length));return o}catch(e){return''}}
+
+function getApiKey(){return sharedKeys.claude||localStorage.getItem('kp_claude_key')||''}
+function getOpenAIKey(){return sharedKeys.openai||localStorage.getItem('kp_openai_key')||''}
 function hasApiKey(){return !!(getApiKey()||getOpenAIKey())}
 function requireApiKey(){if(!hasApiKey()){toast('⚠️ Bitte zuerst API-Key in den Einstellungen hinterlegen');showSettings();return false}return true}
+
+let keysLoaded=false;
+function initKeySync(){
+  CFG_REF.onSnapshot(snap=>{
+    const d=(snap.exists&&snap.data())||{};
+    sharedKeys={claude:deobf(d.k1||''),openai:deobf(d.k2||'')};
+    keysLoaded=true;
+    // lokale Spiegelung für den Offline-Fall
+    if(sharedKeys.claude)localStorage.setItem('kp_claude_key',sharedKeys.claude);
+    if(sharedKeys.openai)localStorage.setItem('kp_openai_key',sharedKeys.openai);
+    // Migration: dieses Gerät hat noch einen alten lokalen Key, die Cloud nicht → hochladen
+    const lc=localStorage.getItem('kp_claude_key')||'',lo=localStorage.getItem('kp_openai_key')||'';
+    if((!sharedKeys.claude&&lc)||(!sharedKeys.openai&&lo)){
+      pushKeys(sharedKeys.claude||lc,sharedKeys.openai||lo);
+    }
+    updateKeyStatusUI();
+  },err=>{console.warn('Key-Sync:',err);keysLoaded=true;updateKeyStatusUI()});
+}
+async function pushKeys(c,o){
+  try{
+    await CFG_REF.set({k1:obf(c||''),k2:obf(o||''),updatedAt:firebase.firestore.FieldValue.serverTimestamp()});
+    sharedKeys={claude:c||'',openai:o||''};
+    return true;
+  }catch(e){console.error('Key-Sync speichern:',e);return false}
+}
+function updateKeyStatusUI(){
+  const el=document.getElementById('key-sync-status');if(!el)return;
+  if(!keysLoaded){el.textContent='⏳ Prüfe Geräte-Synchronisation …';el.style.color='var(--text-muted)';return}
+  if(sharedKeys.claude){el.textContent='🔄 Auf allen Geräten hinterlegt';el.style.color='var(--green)'}
+  else if(getApiKey()){el.textContent='📵 Nur auf diesem Gerät – auf „Keys speichern" tippen, um zu verteilen';el.style.color='var(--red)'}
+  else{el.textContent='⚠️ Noch kein Key hinterlegt';el.style.color='var(--red)'}
+}
 const genId=()=>Date.now().toString(36)+Math.random().toString(36).substr(2,5);
 
 // (Änderung 4) Standardisierte Einheiten
-const UNITS=['g','kg','ml','l','Stk','EL','TL','Bund','Dose','Packung','Prise'];
+const UNITS=['g','kg','ml','l','Stk','EL','TL','Bund','Dose','Packung','Prise','Zehe','Blätter','Scheiben','cm'];
 function unitSelect(selected,cls=''){
-  return`<select class="${cls}" style="border:1px solid var(--border);border-radius:6px;padding:5px 4px;font-size:.82rem;font-family:var(--font-body);background:var(--bg-card)">${UNITS.map(u=>`<option value="${u}"${u===selected?' selected':''}>${u}</option>`).join('')}</select>`;
+  // Unbekannte Einheit aus Altbestand vorne einhängen, damit sie beim Bearbeiten erhalten bleibt
+  const list=(selected&&!UNITS.includes(selected))?[selected].concat(UNITS):UNITS;
+  return`<select class="${cls}" style="border:1px solid var(--border);border-radius:6px;padding:5px 4px;font-size:.82rem;font-family:var(--font-body);background:var(--bg-card)">${list.map(u=>`<option value="${u}"${u===selected?' selected':''}>${u}</option>`).join('')}</select>`;
 }
 
 let recipes=[],weekPlans={},floatingMeals=[],savedLists=[],cart=[];
@@ -596,28 +648,148 @@ let editingListId=null,editListItems=[];
 // ═══════════════════════════════════════
 // FIREBASE SYNC
 // ═══════════════════════════════════════
-function setSyncStatus(s){document.getElementById('sync-dot').className='sync-dot '+(s||'')}
+function setSyncStatus(s){const d=document.getElementById('sync-dot');if(d)d.className='sync-dot '+(s||'')}
+
+// ─────────────────────────────────────────────────────────────
+// DATENVERLUST-SCHUTZ
+// Diese App hat zweimal fast alle Rezepte verloren (März + August 2026),
+// weil ein Lesefehler zu einem leeren Zustand führte, der danach nach
+// Firestore zurückgeschrieben wurde. Diese Regeln nie aufweichen:
+//  1. Nie schreiben, bevor einmal erfolgreich gelesen wurde.
+//  2. Ein Lesefehler darf niemals Seed-Daten erzeugen.
+//  3. Kein Schreibvorgang darf ungefragt Daten vernichten.
+//  4. Jeder erfolgreiche Ladevorgang wird lokal gesichert.
+// ─────────────────────────────────────────────────────────────
+let remoteLoaded=false;                       // true, sobald Firestore einmal erfolgreich gelesen wurde
+let lastGoodCounts={recipes:0,savedLists:0};  // Stand, den Firestore zuletzt bestätigt hat
+
+function snapshotState(){return{recipes,weekPlans,floatingMeals,savedLists,cart,defaultPortions}}
+function applyState(d){
+  recipes=d.recipes||[];weekPlans=d.weekPlans||{};floatingMeals=d.floatingMeals||[];
+  savedLists=d.savedLists||[];cart=d.cart||[];defaultPortions=d.defaultPortions||2;
+}
+function writeLocalBackup(){
+  try{
+    const payload=Object.assign({},snapshotState(),{savedAt:new Date().toISOString()});
+    if(!payload.recipes.length)return;                       // leere Stände sichern wir nicht
+    localStorage.setItem('kp_lastgood',JSON.stringify(payload));
+    let hist=[];try{hist=JSON.parse(localStorage.getItem('kp_history'))||[]}catch(e){}
+    const sig=payload.recipes.length+':'+payload.recipes.map(r=>r.id).join(',');
+    if(!hist[0]||hist[0].sig!==sig){hist.unshift({sig:sig,savedAt:payload.savedAt,data:payload});hist=hist.slice(0,5)}
+    localStorage.setItem('kp_history',JSON.stringify(hist));
+  }catch(e){/* Speicherlimit o.ä. – Backup ist best effort */}
+}
+function readLocalBackup(){
+  for(const k of['kp_lastgood','kp_backup']){
+    try{const b=JSON.parse(localStorage.getItem(k));if(b&&(b.recipes||[]).length)return b}catch(e){}
+  }
+  return null;
+}
+function backupInfo(){const b=readLocalBackup();return b?{count:(b.recipes||[]).length,savedAt:b.savedAt||null}:null}
+
+function showBanner(html){
+  let el=document.getElementById('kp-banner');
+  if(!html){if(el)el.remove();return}
+  if(!el){
+    el=document.createElement('div');el.id='kp-banner';
+    el.style.cssText='position:fixed;top:0;left:0;right:0;z-index:9999;background:#D9534F;color:#fff;font-family:var(--font-body),system-ui;font-size:.78rem;line-height:1.4;font-weight:500;padding:9px 12px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.2)';
+    document.body.appendChild(el);
+  }
+  el.innerHTML=html;
+}
+function dismissBanner(){showBanner(null)}
+const BTN_W='margin-left:8px;background:#fff;color:#C4612A;border:none;border-radius:6px;padding:4px 10px;font-weight:700;cursor:pointer';
+const BTN_G='margin-left:4px;background:transparent;color:#fff;border:1px solid rgba(255,255,255,.6);border-radius:6px;padding:4px 8px;cursor:pointer';
+
+// Stellt den letzten lokal gesicherten Stand wieder her (Rettungsleine)
+function restoreFromLocalBackup(){
+  const b=readLocalBackup();
+  if(!b){toast('Kein lokales Backup vorhanden');return}
+  applyState(b);
+  lastGoodCounts={recipes:0,savedLists:0};   // Guard darf gegen die Wiederherstellung nicht feuern
+  save({destructive:true});
+  lastGoodCounts={recipes:recipes.length,savedLists:savedLists.length};
+  dismissBanner();renderAll();
+  toast('✅ '+recipes.length+' Rezepte wiederhergestellt');
+}
+
 let saveTimer=null;
-function save(){
+function save(opts){
+  const destructive=!!(opts&&opts.destructive);
+  // Regel 1: vor dem ersten erfolgreichen Lesen wird nie geschrieben
+  if(!remoteLoaded){
+    console.warn('save() blockiert: Firestore wurde noch nicht erfolgreich gelesen');
+    setSyncStatus('');
+    toast('⚠️ Keine Verbindung – Änderung wurde nicht gespeichert');
+    return;
+  }
+  // Regel 3: nichts ungefragt vernichten
+  if(!destructive&&lastGoodCounts.recipes>0&&recipes.length===0){
+    console.error('save() blockiert: Schreibvorgang hätte alle Rezepte gelöscht');
+    toast('⛔ Schutz aktiv: leerer Rezeptstand wurde nicht gespeichert');
+    return;
+  }
+  if(!destructive&&lastGoodCounts.savedLists>0&&savedLists.length===0){
+    console.error('save() blockiert: Schreibvorgang hätte alle Listen gelöscht');
+    toast('⛔ Schutz aktiv: leere Listen wurden nicht gespeichert');
+    return;
+  }
   clearTimeout(saveTimer);setSyncStatus('syncing');
   saveTimer=setTimeout(async()=>{
-    try{await DOC_REF.set({recipes,weekPlans,floatingMeals,savedLists,cart,defaultPortions,updatedAt:firebase.firestore.FieldValue.serverTimestamp()});setSyncStatus('online')}
-    catch(e){console.error('Save:',e);setSyncStatus('');try{localStorage.setItem('kp_backup',JSON.stringify({recipes,weekPlans,floatingMeals,savedLists,cart,defaultPortions}))}catch{}}
+    try{
+      await DOC_REF.set({recipes,weekPlans,floatingMeals,savedLists,cart,defaultPortions,updatedAt:firebase.firestore.FieldValue.serverTimestamp()});
+      setSyncStatus('online');
+      lastGoodCounts={recipes:recipes.length,savedLists:savedLists.length};
+      writeLocalBackup();
+    }catch(e){
+      console.error('Save:',e);setSyncStatus('');
+      toast('⚠️ Speichern fehlgeschlagen – bitte Verbindung prüfen');
+    }
   },300);
 }
+
 async function initFirebase(){
-  try{DOC_REF.onSnapshot(snap=>{
-    if(!snap.exists){if(!initDone)seedStarterData();return}
+  initKeySync();
+  // Regel 2: Der Fehler-Callback erzeugt NIEMALS Seed-Daten und schreibt nie.
+  DOC_REF.onSnapshot(snap=>{
+    if(!snap.exists){
+      // Einziger erlaubter Seed-Fall: Firestore bestätigt, dass das Dokument fehlt.
+      const b=readLocalBackup();
+      remoteLoaded=true;
+      if(b){applyState(b);lastGoodCounts={recipes:0,savedLists:0};save({destructive:true});finishInit();return}
+      if(!initDone)seedStarterData();
+      return;
+    }
     const d=snap.data();if(!d)return;
-    recipes=d.recipes||[];weekPlans=d.weekPlans||{};floatingMeals=d.floatingMeals||[];savedLists=d.savedLists||[];cart=d.cart||[];defaultPortions=d.defaultPortions||2;
-    setSyncStatus('online');if(initDone)renderAll();else{initDone=true;hideLoading();renderAll()}
-  },err=>{console.error('Snap:',err);setSyncStatus('');loadFromBackup()})}
-  catch(e){loadFromBackup()}
+    const incoming=d.recipes||[];
+    const backup=readLocalBackup();
+    applyState(d);
+    remoteLoaded=true;
+    lastGoodCounts={recipes:recipes.length,savedLists:savedLists.length};
+    setSyncStatus('online');
+    if(incoming.length){writeLocalBackup();dismissBanner()}
+    else if(backup&&backup.recipes.length){
+      // Remote ist leer, lokal liegt ein guter Stand: anbieten statt still hinnehmen.
+      showBanner('⚠️ Die Datenbank enthält keine Rezepte. Lokale Sicherung mit '+backup.recipes.length+' Rezepten vorhanden. <button onclick="restoreFromLocalBackup()" style="'+BTN_W+'">Wiederherstellen</button><button onclick="dismissBanner()" style="'+BTN_G+'">Ignorieren</button>');
+    }
+    finishInit();
+  },err=>{
+    console.error('Firestore-Snapshot:',err);
+    remoteLoaded=false;setSyncStatus('');
+    if(!initDone){const b=readLocalBackup();if(b)applyState(b)}
+    showBanner('⚠️ Keine Verbindung zur Datenbank – Nur-Lese-Modus, Änderungen werden nicht gespeichert. <button onclick="location.reload()" style="'+BTN_W+'">Neu laden</button>');
+    finishInit();
+  });
+  // Hängt der erste Snapshot (z. B. offline), zeigen wir den lokalen Stand nur lesend an.
+  setTimeout(()=>{
+    if(initDone)return;
+    const b=readLocalBackup();if(b)applyState(b);
+    showBanner('⚠️ Datenbank nicht erreichbar – lokaler Stand, Nur-Lese-Modus. <button onclick="location.reload()" style="'+BTN_W+'">Neu laden</button>');
+    finishInit();
+  },12000);
 }
-function loadFromBackup(){
-  try{const b=JSON.parse(localStorage.getItem('kp_backup'));if(b){recipes=b.recipes||[];weekPlans=b.weekPlans||{};floatingMeals=b.floatingMeals||[];savedLists=b.savedLists||[];cart=b.cart||[];defaultPortions=b.defaultPortions||2}}catch{}
-  if(!recipes.length)seedStarterData();else{initDone=true;hideLoading();renderAll()}
-}
+function finishInit(){if(!initDone){initDone=true;hideLoading()}renderAll()}
+
 function seedStarterData(){
   recipes=[
     {id:genId(),name:'Pasta Arrabiata',emoji:'🍝',category:'Hauptgericht',notes:'Schnell & einfach!',ingredients:[{name:'Spaghetti',amount:'125',unit:'g'},{name:'Passierte Tomaten',amount:'150',unit:'ml'},{name:'Knoblauch',amount:'1',unit:'Stk'},{name:'Chiliflocken',amount:'0.5',unit:'TL'},{name:'Olivenöl',amount:'1',unit:'EL'},{name:'Parmesan',amount:'15',unit:'g'},{name:'Basilikum',amount:'3',unit:'Stk'},{name:'Salz',amount:'1',unit:'Prise'}],tags:{time:'schnell',weight:'mittel',cuisine:'Italienisch',extra_tags:['comfort-food','one-pot']}},
@@ -625,7 +797,9 @@ function seedStarterData(){
     {id:genId(),name:'Avocado-Toast',emoji:'🥑',category:'Frühstück',notes:'Schnelles Frühstück.',ingredients:[{name:'Vollkornbrot',amount:'2',unit:'Stk'},{name:'Avocado',amount:'0.5',unit:'Stk'},{name:'Cherrytomaten',amount:'5',unit:'Stk'},{name:'Zitronensaft',amount:'1',unit:'TL'},{name:'Chiliflocken',amount:'1',unit:'Prise'},{name:'Salz',amount:'1',unit:'Prise'}],tags:{time:'schnell',weight:'leicht',cuisine:'International',extra_tags:['gesund']}},
     {id:genId(),name:'Caprese Salat',emoji:'🥗',category:'Salat',notes:'Nur mit frischem Mozzarella!',ingredients:[{name:'Mozzarella',amount:'125',unit:'g'},{name:'Tomaten',amount:'1',unit:'Stk'},{name:'Basilikum',amount:'5',unit:'Stk'},{name:'Olivenöl',amount:'1',unit:'EL'},{name:'Balsamico',amount:'1',unit:'TL'},{name:'Salz',amount:'1',unit:'Prise'},{name:'Pfeffer',amount:'1',unit:'Prise'}],tags:{time:'schnell',weight:'leicht',cuisine:'Italienisch',extra_tags:['sommerlich','low-carb']}}
   ];
-  save();initDone=true;hideLoading();renderAll();
+  lastGoodCounts={recipes:0,savedLists:0};
+  save({destructive:true});          // erlaubt: Firestore hat bestätigt, dass es keine Daten gibt
+  finishInit();
 }
 function hideLoading(){document.getElementById('loading-screen').style.display='none'}
 function renderAll(){renderRecipes();renderPlanner();renderCart();renderSavedLists();updateCartBadge()}
@@ -790,7 +964,7 @@ function addCustomTag(){
   input.value='';renderTagEditor(r.tags);
 }
 
-function deleteRecipe(id){showConfirm('Löschen','Rezept wirklich löschen?',()=>{recipes=recipes.filter(r=>r.id!==id);save();renderRecipes();toast('Gelöscht')})}
+function deleteRecipe(id){showConfirm('Löschen','Rezept wirklich löschen?',()=>{recipes=recipes.filter(r=>r.id!==id);save({destructive:true});renderRecipes();toast('Gelöscht')})}
 
 // (Änderung 4) Ingredient editor with unit dropdowns
 function renderIngredientEditor(containerId,ings){
@@ -982,7 +1156,7 @@ function renderSavedLists(){
 }
 function viewSavedList(id){const l=savedLists.find(x=>x.id===id);if(!l)return;document.getElementById('list-detail-content').innerHTML=`<h2 class="modal-title">${l.name}</h2><p style="font-size:.8rem;color:var(--text-secondary);margin-bottom:12px">${l.items.length} Artikel</p><div class="ingredient-list">${l.items.map(i=>`<div class="ingredient-row"><span class="ingredient-name">${i.name}</span><span class="ingredient-amount">${fmtAmt(i.amount)}</span><span class="ingredient-unit">${i.unit}</span></div>`).join('')}</div><div class="divider"></div><div class="btn-group"><button class="btn btn-green btn-sm" onclick="addListToCart('${l.id}');closeModal('modal-list-detail')">🛒 Warenkorb</button><button class="btn btn-outline btn-sm" onclick="closeModal('modal-list-detail');openEditListModal('${l.id}')">✏️ Bearbeiten</button><button class="btn btn-outline btn-sm" onclick="exportToNotes('list','${l.id}')">📝 Notizen</button></div>`;openModal('modal-list-detail')}
 function addListToCart(id){const l=savedLists.find(x=>x.id===id);if(!l)return;l.items.forEach(item=>{const k=makeKey(item.name,item.unit);const ex=cart.find(c=>c.key===k);if(ex)ex.amount+=item.amount;else cart.push({id:genId(),key:k,name:item.name,amount:item.amount,unit:item.unit,checked:false})});save();updateCartBadge();toast(`${l.name} → Warenkorb`)}
-function deleteSavedList(id){showConfirm('Löschen','Liste löschen?',()=>{savedLists=savedLists.filter(l=>l.id!==id);save();renderSavedLists();toast('Gelöscht')})}
+function deleteSavedList(id){showConfirm('Löschen','Liste löschen?',()=>{savedLists=savedLists.filter(l=>l.id!==id);save({destructive:true});renderSavedLists();toast('Gelöscht')})}
 
 // ═══════════════════════════════════════
 // CART
@@ -1029,21 +1203,46 @@ function showSettings(){
   document.getElementById('setting-default-portions').value=defaultPortions;
   document.getElementById('setting-claude-key').value=getApiKey();
   document.getElementById('setting-openai-key').value=getOpenAIKey();
-  document.getElementById('key-status').textContent=hasApiKey()?'✅ Claude-Key gespeichert':'⚠️ Kein API-Key hinterlegt';
-  document.getElementById('key-status').style.color=hasApiKey()?'var(--green)':'var(--red)';
+  const st=document.getElementById('key-status');
+  st.textContent=hasApiKey()?'✅ Claude-Key hinterlegt':'⚠️ Kein API-Key hinterlegt';
+  st.style.color=hasApiKey()?'var(--green)':'var(--red)';
+  updateKeyStatusUI();
+  const bi=backupInfo(),be=document.getElementById('backup-status');
+  if(be)be.textContent=bi?('Letzte lokale Sicherung: '+bi.count+' Rezepte'+(bi.savedAt?' · '+new Date(bi.savedAt).toLocaleString('de-DE'):'')):'Noch keine lokale Sicherung';
   openModal('modal-settings');
 }
-function saveApiKeys(){
+async function saveApiKeys(){
   const ck=document.getElementById('setting-claude-key').value.trim().replace(/\s+/g,'');
   const ok=document.getElementById('setting-openai-key').value.trim().replace(/\s+/g,'');
   if(ck)localStorage.setItem('kp_claude_key',ck);else localStorage.removeItem('kp_claude_key');
   if(ok)localStorage.setItem('kp_openai_key',ok);else localStorage.removeItem('kp_openai_key');
+  sharedKeys={claude:ck,openai:ok};
   const st=document.getElementById('key-status');
-  if(ck||ok){st.textContent='✅ Gespeichert!';st.style.color='var(--green)';toast('API-Keys gespeichert')}
-  else{st.textContent='⚠️ Kein Key eingetragen';st.style.color='var(--red)'}
+  if(!ck&&!ok){st.textContent='⚠️ Kein Key eingetragen';st.style.color='var(--red)';updateKeyStatusUI();return}
+  st.textContent='⏳ Speichere und verteile …';st.style.color='var(--text-muted)';
+  const okSync=await pushKeys(ck,ok);
+  if(okSync){st.textContent='✅ Gespeichert – gilt jetzt auf allen Geräten';st.style.color='var(--green)';toast('🔑 Key auf allen Geräten hinterlegt')}
+  else{st.textContent='⚠️ Nur lokal gespeichert (keine Verbindung)';st.style.color='var(--red)';toast('Nur lokal gespeichert')}
+  updateKeyStatusUI();
+}
+function removeKeysEverywhere(){
+  showConfirm('Keys entfernen','API-Keys auf ALLEN Geräten entfernen?',async()=>{
+    localStorage.removeItem('kp_claude_key');localStorage.removeItem('kp_openai_key');
+    await pushKeys('','');
+    document.getElementById('setting-claude-key').value='';
+    document.getElementById('setting-openai-key').value='';
+    updateKeyStatusUI();toast('Keys überall entfernt');
+  });
+}
+function restoreBackupFromSettings(){
+  const bi=backupInfo();
+  if(!bi){toast('Keine lokale Sicherung vorhanden');return}
+  showConfirm('Backup wiederherstellen','Lokale Sicherung mit '+bi.count+' Rezepten zurückspielen? Der aktuelle Stand wird ersetzt.',()=>{
+    closeModal('modal-settings');restoreFromLocalBackup();
+  });
 }
 async function testApiKey(){
-  saveApiKeys();
+  await saveApiKeys();
   const key=getApiKey();
   const st=document.getElementById('key-status');
   if(!key){st.textContent='⚠️ Kein Claude-Key eingetragen';st.style.color='var(--red)';return}
@@ -1055,7 +1254,7 @@ async function testApiKey(){
   }catch(e){st.textContent='❌ Verbindungsfehler';st.style.color='var(--red)'}
 }
 document.getElementById('setting-default-portions').addEventListener('change',function(){defaultPortions=parseInt(this.value)||2;save()});
-function confirmResetAll(){showConfirm('Alles löschen','Wirklich ALLE Daten löschen? Das betrifft beide Nutzer!',async()=>{recipes=[];weekPlans={};floatingMeals=[];savedLists=[];cart=[];defaultPortions=2;save();closeModal('modal-settings');renderAll();toast('Alles zurückgesetzt')})}
+function confirmResetAll(){showConfirm('Alles löschen','Wirklich ALLE Daten löschen? Das betrifft beide Nutzer!',async()=>{recipes=[];weekPlans={};floatingMeals=[];savedLists=[];cart=[];defaultPortions=2;save({destructive:true});closeModal('modal-settings');renderAll();toast('Alles zurückgesetzt')})}
 
 // ═══════════════════════════════════════
 // 💬 CHAT AI ASSISTANT (vollständiger Zugriff)
@@ -1455,21 +1654,20 @@ function executeChatActions(actions){
   return results;
 }
 
-// PWA - Force update & clear old caches
+// PWA – Service Worker registrieren und auf Updates prüfen.
+// (Früher wurde hier bei JEDEM Laden der Cache gelöscht und der SW neu registriert.
+//  Das hat Offline-Betrieb faktisch abgeschaltet – und genau ein Ladefehler
+//  war die Ursache des Datenverlusts.)
 if('serviceWorker' in navigator){
-  // Clear ALL caches first to break old SW cycle
-  caches.keys().then(keys=>keys.forEach(k=>caches.delete(k)));
-  navigator.serviceWorker.getRegistrations().then(regs=>{
-    regs.forEach(r=>r.unregister());
-    // Re-register with cache buster
-    setTimeout(()=>navigator.serviceWorker.register('sw.js?v=10').catch(e=>console.log('SW:',e)),1000);
-  });
+  navigator.serviceWorker.register('sw.js?v=11')
+    .then(reg=>{reg.update();setInterval(()=>reg.update(),60*60*1000)})
+    .catch(e=>console.log('SW:',e));
 }
 
 // INIT
 initFirebase();
-// Auto-open settings if no API key stored
-setTimeout(()=>{if(!hasApiKey()){toast('⚠️ Bitte API-Key eintragen');showSettings()}},2000);
+// Einstellungen nur öffnen, wenn nach der Geräte-Synchronisation wirklich kein Key da ist
+setTimeout(()=>{if(keysLoaded&&!hasApiKey()){toast('⚠️ Bitte API-Key eintragen');showSettings()}},5000);
 </script>
 </body>
 </html>
