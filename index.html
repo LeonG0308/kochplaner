@@ -694,10 +694,19 @@ async function listCloudBackups(){
 
 // Zusammenführen statt Ersetzen: eine Wiederherstellung kann nur Rezepte
 // hinzufügen, niemals vorhandene entfernen.
+function recipeKey(r){return String(r&&r.name||"").toLowerCase().trim()}
 function mergeRecipes(list){
-  const have=new Set(recipes.map(r=>r.id));
+  // Abgleich ueber ID UND Name: nach dem Datenverlust existierten Rezepte
+  // doppelt unter neuen IDs. Nur der Name-Abgleich verhindert, dass eine
+  // Wiederherstellung solche Duplikate zurueckbringt.
+  const haveId=new Set(recipes.map(r=>r.id));
+  const haveName=new Set(recipes.map(recipeKey));
   let added=0;
-  (list||[]).forEach(r=>{if(r&&r.id&&!have.has(r.id)){recipes.push(r);have.add(r.id);added++}});
+  (list||[]).forEach(r=>{
+    if(!r||!r.id)return;
+    if(haveId.has(r.id)||haveName.has(recipeKey(r)))return;
+    recipes.push(r);haveId.add(r.id);haveName.add(recipeKey(r));added++;
+  });
   return added;
 }
 
@@ -736,10 +745,13 @@ function findLocalExtras(){
   push(localStorage.getItem('kp_lastgood'));
   push(localStorage.getItem('kp_backup'));
   try{(JSON.parse(localStorage.getItem('kp_history'))||[]).forEach(h=>h&&h.data&&sources.push(h.data))}catch(e){}
-  const have=new Set(recipes.map(r=>r.id));
+  const haveId=new Set(recipes.map(r=>r.id));
+  const haveName=new Set(recipes.map(recipeKey));
   const extra=new Map();
   sources.forEach(s=>(s.recipes||[]).forEach(r=>{
-    if(r&&r.id&&!have.has(r.id)&&!extra.has(r.id))extra.set(r.id,r);
+    if(!r||!r.id)return;
+    if(haveId.has(r.id)||haveName.has(recipeKey(r)))return;   // Duplikate nicht anbieten
+    if(!extra.has(recipeKey(r)))extra.set(recipeKey(r),r);
   }));
   return [...extra.values()];
 }
@@ -1777,7 +1789,7 @@ function executeChatActions(actions){
 //  Das hat Offline-Betrieb faktisch abgeschaltet – und genau ein Ladefehler
 //  war die Ursache des Datenverlusts.)
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js?v=12')
+  navigator.serviceWorker.register('sw.js?v=13')
     .then(reg=>{reg.update();setInterval(()=>reg.update(),60*60*1000)})
     .catch(e=>console.log('SW:',e));
 }
