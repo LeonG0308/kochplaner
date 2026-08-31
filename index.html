@@ -416,7 +416,10 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg width='10
     <div class="input-group"><label>Emoji</label><input type="text" class="input" id="recipe-emoji" placeholder="🍝" maxlength="4" style="text-align:center;font-size:1.4rem"></div>
     <div class="input-group"><label>Kategorie</label><select id="recipe-category"><option>Hauptgericht</option><option>Frühstück</option><option>Snack</option><option>Suppe</option><option>Salat</option><option>Beilage</option><option>Dessert</option></select></div>
   </div>
-  <div class="input-group"><label>Notizen (optional)</label><textarea id="recipe-notes" placeholder="Zubereitungshinweise..."></textarea></div>
+  <div class="input-group"><label>Notizen (optional)</label><textarea id="recipe-notes" placeholder="z.B. Portionen, Herkunft, Tipps"></textarea></div>
+  <div class="input-group"><label>Zubereitung <span style="font-size:.7rem;color:var(--text-muted)">(ein Schritt pro Zeile)</span></label><textarea id="recipe-steps" rows="6" placeholder="Zwiebel anbraten
+Hack dazugeben und würzen
+…"></textarea></div>
   <!-- TAG EDITOR (Änderung 3) -->
   <div id="tag-editor-section" class="hidden">
     <div class="divider"></div>
@@ -1044,13 +1047,13 @@ function renderRecipes(){
 function viewRecipe(id){
   const r=recipes.find(x=>x.id===id);if(!r)return;const t=r.tags||{};
   const allT=[t.time,t.weight,t.cuisine,...(t.extra_tags||[])].filter(Boolean);
-  document.getElementById('recipe-detail-content').innerHTML=`<div style="text-align:center;margin-bottom:14px"><div style="font-size:2.8rem;margin-bottom:6px">${r.emoji||'🍽️'}</div><h2 class="modal-title" style="margin-bottom:4px">${r.name}</h2><div class="recipe-meta" style="justify-content:center">${r.category?`<span class="chip chip-tag">${r.category}</span>`:''}</div>${allT.length?`<div class="recipe-meta" style="justify-content:center;margin-top:6px">${allT.map(x=>`<span class="chip chip-filter">${x}</span>`).join('')}</div>`:''}</div>${r.notes?`<p style="font-size:.85rem;color:var(--text-secondary);margin-bottom:14px;line-height:1.5">${r.notes}</p>`:''}<div class="divider"></div><p class="section-label">Zutaten pro Portion</p><div class="ingredient-list">${(r.ingredients||[]).map(i=>`<div class="ingredient-row"><span class="ingredient-name">${i.name}</span><span class="ingredient-amount">${i.amount}</span><span class="ingredient-unit">${i.unit}</span></div>`).join('')}</div><div class="divider"></div><div class="btn-group"><button class="btn btn-primary btn-sm" onclick="addRecipeToCart('${r.id}');closeModal('modal-recipe-detail')">🛒 In Warenkorb</button><button class="btn btn-secondary btn-sm" onclick="closeModal('modal-recipe-detail');editRecipe('${r.id}')">✏️ Bearbeiten</button><button class="btn btn-outline btn-sm" onclick="exportToNotes('recipe','${r.id}')">📝 Notizen</button></div>`;
+  document.getElementById('recipe-detail-content').innerHTML=`<div style="text-align:center;margin-bottom:14px"><div style="font-size:2.8rem;margin-bottom:6px">${r.emoji||'🍽️'}</div><h2 class="modal-title" style="margin-bottom:4px">${r.name}</h2><div class="recipe-meta" style="justify-content:center">${r.category?`<span class="chip chip-tag">${r.category}</span>`:''}</div>${allT.length?`<div class="recipe-meta" style="justify-content:center;margin-top:6px">${allT.map(x=>`<span class="chip chip-filter">${x}</span>`).join('')}</div>`:''}</div>${r.notes?`<p style="font-size:.85rem;color:var(--text-secondary);margin-bottom:14px;line-height:1.5">${r.notes}</p>`:''}<div class="divider"></div><p class="section-label">Zutaten pro Portion</p><div class="ingredient-list">${(r.ingredients||[]).map(i=>`<div class="ingredient-row"><span class="ingredient-name">${i.name}</span><span class="ingredient-amount">${i.amount}</span><span class="ingredient-unit">${i.unit}</span></div>`).join('')}</div>${(r.steps&&r.steps.length)?`<div class="divider"></div><p class="section-label">Zubereitung</p><ol style="margin:0 0 4px 18px;padding:0;font-size:.85rem;line-height:1.55;color:var(--text-secondary)">${r.steps.map(s=>`<li style="margin-bottom:6px">${s}</li>`).join('')}</ol>`:''}<div class="divider"></div><div class="btn-group"><button class="btn btn-primary btn-sm" onclick="addRecipeToCart('${r.id}');closeModal('modal-recipe-detail')">🛒 In Warenkorb</button><button class="btn btn-secondary btn-sm" onclick="closeModal('modal-recipe-detail');editRecipe('${r.id}')">✏️ Bearbeiten</button><button class="btn btn-outline btn-sm" onclick="exportToNotes('recipe','${r.id}')">📝 Notizen</button></div>`;
   openModal('modal-recipe-detail');
 }
 
 function addRecipeToCart(id,portions=null){const r=recipes.find(x=>x.id===id);if(!r||!r.ingredients)return;const p=portions||defaultPortions;r.ingredients.forEach(ing=>{const key=makeKey(ing.name,ing.unit);const amt=(parseFloat(ing.amount)||0)*p;const ex=cart.find(c=>c.key===key);if(ex)ex.amount+=amt;else cart.push({id:genId(),key,name:ing.name,amount:amt,unit:ing.unit,checked:false})});save();updateCartBadge();toast(`${r.emoji} ${r.name} → Warenkorb (${p}P)`)}
 
-function openAddRecipeModal(){editingRecipeId=null;document.getElementById('recipe-modal-title').textContent='Neues Rezept';document.getElementById('save-recipe-btn').textContent='Rezept speichern';document.getElementById('recipe-name').value='';document.getElementById('recipe-emoji').value='';document.getElementById('recipe-category').value='Hauptgericht';document.getElementById('recipe-notes').value='';document.getElementById('tag-editor-section').classList.add('hidden');renderIngredientEditor('ingredient-editor',[{name:'',amount:'',unit:'g'}]);openModal('modal-recipe')}
+function openAddRecipeModal(){editingRecipeId=null;document.getElementById('recipe-modal-title').textContent='Neues Rezept';document.getElementById('save-recipe-btn').textContent='Rezept speichern';document.getElementById('recipe-name').value='';document.getElementById('recipe-emoji').value='';document.getElementById('recipe-category').value='Hauptgericht';document.getElementById('recipe-notes').value='';document.getElementById('recipe-steps').value='';document.getElementById('tag-editor-section').classList.add('hidden');renderIngredientEditor('ingredient-editor',[{name:'',amount:'',unit:'g'}]);openModal('modal-recipe')}
 
 function editRecipe(id){
   const r=recipes.find(x=>x.id===id);if(!r)return;editingRecipeId=id;
@@ -1058,6 +1061,7 @@ function editRecipe(id){
   document.getElementById('save-recipe-btn').textContent='Speichern';
   document.getElementById('recipe-name').value=r.name;document.getElementById('recipe-emoji').value=r.emoji||'';
   document.getElementById('recipe-category').value=r.category||'Hauptgericht';document.getElementById('recipe-notes').value=r.notes||'';
+  document.getElementById('recipe-steps').value=(r.steps||[]).join('\n');
   // (Änderung 3) Tag editor
   document.getElementById('tag-editor-section').classList.remove('hidden');
   renderTagEditor(r.tags);
@@ -1101,7 +1105,9 @@ function getIngredientsFromEditor(containerId='ingredient-editor'){return[...doc
 
 async function saveRecipe(){
   const name=document.getElementById('recipe-name').value.trim();if(!name){toast('Name fehlt');return}
-  const recipe={id:editingRecipeId||genId(),name,emoji:document.getElementById('recipe-emoji').value.trim()||'🍽️',category:document.getElementById('recipe-category').value,notes:document.getElementById('recipe-notes').value.trim(),ingredients:getIngredientsFromEditor(),tags:null};
+  // Zubereitung: eine Zeile = ein Schritt, fuehrende Nummerierung wird entfernt
+  const steps=document.getElementById('recipe-steps').value.split('\n').map(s=>s.replace(/^\s*\d+[.)]\s*/,'').trim()).filter(Boolean);
+  const recipe={id:editingRecipeId||genId(),name,emoji:document.getElementById('recipe-emoji').value.trim()||'🍽️',category:document.getElementById('recipe-category').value,notes:document.getElementById('recipe-notes').value.trim(),ingredients:getIngredientsFromEditor(),steps,tags:null};
   if(editingRecipeId){const i=recipes.findIndex(r=>r.id===editingRecipeId);if(i>=0){recipe.tags=recipes[i].tags;recipes[i]=recipe}}else recipes.push(recipe);
   save();closeModal('modal-recipe');renderRecipes();toast(editingRecipeId?'Gespeichert':'Hinzugefügt ✨');
   if(!editingRecipeId||!recipe.tags){const tags=await autoTagRecipe(recipe);const j=recipes.findIndex(r=>r.id===recipe.id);if(j>=0){recipes[j].tags=tags;save();renderRecipes()}}
@@ -1163,7 +1169,7 @@ Kategorie: Hauptgericht, Frühstück, Snack, Suppe, Salat, Beilage oder Dessert.
   btn.innerHTML='🤖 Zutaten extrahieren';btn.disabled=false;
 }
 
-async function adoptAIRecipe(){if(!aiExtractedRecipe)return;const recipe={id:genId(),name:aiExtractedRecipe.name||'Neues Rezept',emoji:aiExtractedRecipe.emoji||'🍽️',category:aiExtractedRecipe.category||'Hauptgericht',notes:'',ingredients:aiExtractedRecipe.ingredients||[],tags:null};recipes.push(recipe);save();closeModal('modal-ai-recipe');renderRecipes();toast('Importiert ✨');const tags=await autoTagRecipe(recipe);const i=recipes.findIndex(r=>r.id===recipe.id);if(i>=0){recipes[i].tags=tags;save();renderRecipes()}}
+async function adoptAIRecipe(){if(!aiExtractedRecipe)return;const recipe={id:genId(),name:aiExtractedRecipe.name||'Neues Rezept',emoji:aiExtractedRecipe.emoji||'🍽️',category:aiExtractedRecipe.category||'Hauptgericht',notes:'',ingredients:aiExtractedRecipe.ingredients||[],steps:aiExtractedRecipe.steps||[],tags:null};recipes.push(recipe);save();closeModal('modal-ai-recipe');renderRecipes();toast('Importiert ✨');const tags=await autoTagRecipe(recipe);const i=recipes.findIndex(r=>r.id===recipe.id);if(i>=0){recipes[i].tags=tags;save();renderRecipes()}}
 
 // ═══════════════════════════════════════
 // WEEK PLANNER
@@ -1300,7 +1306,9 @@ function downloadCart(){const items=cart.filter(i=>!i.checked);let t='🛒 WAREN
 // ═══════════════════════════════════════
 // EXPORT / SHARE (Änderung 6: nur Text, kein Dokument)
 // ═══════════════════════════════════════
-function buildNotesText(type,id){if(type==='recipe'){const r=recipes.find(x=>x.id===id);if(!r)return null;let t=`${r.emoji||'🍽️'} ${r.name}\n${'─'.repeat(25)}\n`;if(r.category)t+=`${r.category}\n`;if(r.notes)t+=`\n${r.notes}\n`;t+=`\n📋 Zutaten (pro Portion):\n`;(r.ingredients||[]).forEach(i=>{t+=`• ${i.name}: ${i.amount} ${i.unit}\n`});return{title:r.name,text:t}}if(type==='list'){const l=savedLists.find(x=>x.id===id);if(!l)return null;let t=`🛒 ${l.name}\n${'─'.repeat(25)}\n\n`;l.items.forEach(i=>{t+=`☐ ${i.name} – ${fmtAmt(i.amount)} ${i.unit}\n`});return{title:l.name,text:t}}if(type==='cart'){const items=cart.filter(i=>!i.checked);let t=`🛒 Warenkorb\n${'─'.repeat(25)}\n\n`;items.forEach(i=>{t+=`☐ ${i.name} – ${fmtAmt(i.amount)} ${i.unit}\n`});t+=`\n${items.length} Artikel`;return{title:'Warenkorb',text:t}}return null}
+function buildNotesText(type,id){if(type==='recipe'){const r=recipes.find(x=>x.id===id);if(!r)return null;let t=`${r.emoji||'🍽️'} ${r.name}\n${'─'.repeat(25)}\n`;if(r.category)t+=`${r.category}\n`;if(r.notes)t+=`\n${r.notes}\n`;t+=`\n📋 Zutaten (pro Portion):\n`;(r.ingredients||[]).forEach(i=>{t+=`• ${i.name}: ${i.amount} ${i.unit}\n`});
+    if((r.steps||[]).length){t+=`\n👩‍🍳 Zubereitung:\n`;r.steps.forEach((s,i)=>{t+=`${i+1}. ${s}\n`})}
+    return{title:r.name,text:t}}if(type==='list'){const l=savedLists.find(x=>x.id===id);if(!l)return null;let t=`🛒 ${l.name}\n${'─'.repeat(25)}\n\n`;l.items.forEach(i=>{t+=`☐ ${i.name} – ${fmtAmt(i.amount)} ${i.unit}\n`});return{title:l.name,text:t}}if(type==='cart'){const items=cart.filter(i=>!i.checked);let t=`🛒 Warenkorb\n${'─'.repeat(25)}\n\n`;items.forEach(i=>{t+=`☐ ${i.name} – ${fmtAmt(i.amount)} ${i.unit}\n`});t+=`\n${items.length} Artikel`;return{title:'Warenkorb',text:t}}return null}
 
 async function exportToNotes(type,id){
   const data=buildNotesText(type,id);if(!data)return;
@@ -1789,7 +1797,7 @@ function executeChatActions(actions){
 //  Das hat Offline-Betrieb faktisch abgeschaltet – und genau ein Ladefehler
 //  war die Ursache des Datenverlusts.)
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js?v=13')
+  navigator.serviceWorker.register('sw.js?v=14')
     .then(reg=>{reg.update();setInterval(()=>reg.update(),60*60*1000)})
     .catch(e=>console.log('SW:',e));
 }
