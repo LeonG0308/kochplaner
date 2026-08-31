@@ -42,6 +42,9 @@ app/shared
   defaultPortions Int (Default 2)
   updatedAt       Timestamp
 
+backups/JJJJ-MM-TT  (taegliche, unveraenderliche Kopie des kompletten Zustands)
+  recipes, weekPlans, floatingMeals, savedLists, defaultPortions, recipeCount, savedAt
+
 app/config        (getrennt, damit App-Daten und Zugangsdaten nie kollidieren)
   k1              Claude-API-Key, verschleiert (siehe "API-Keys")
   k2              OpenAI-API-Key, verschleiert
@@ -69,6 +72,14 @@ zurückgeschrieben. Deshalb gelten diese Regeln – sie dürfen nie wieder aufge
 4. **Jeder erfolgreiche Ladevorgang schreibt ein lokales Backup** (`kp_lastgood` + rotierende Historie
    `kp_history`, max. 5 Stände) in localStorage. Das ist die letzte Rettungsleine.
 5. Offline/Fehler ⇒ App läuft im **Nur-Lese-Modus** mit Banner, statt zu raten.
+6. **Tägliche Cloud-Sicherung**: Beim ersten erfolgreichen Laden pro Tag schreibt die App eine
+   Kopie nach `backups/JJJJ-MM-TT`. Bestehende Tages-Sicherungen werden nie überschrieben.
+   Firestore selbst hat auf dem Spark-Tarif **keine** Backups (weder PITR noch geplante Sicherungen),
+   deshalb ist das die einzige Historie, die existiert.
+7. **Geräte-Rettung**: Findet die App auf einem Gerät lokale Sicherungen mit Rezepten, die in der
+   Datenbank fehlen, bietet sie diese per Banner zum Zurückholen an. Wiederherstellungen
+   **ergänzen** immer nur (`mergeRecipes`) und löschen nie.
+8. `confirmResetAll` fasst die Rezepte nicht mehr an – ein Ein-Klick-Totalverlust ist unmöglich.
 
 ## API-Keys
 
@@ -84,6 +95,15 @@ lädt ihn beim Start automatisch hoch (Migration), falls in Firestore noch keine
 Trade-off, der bewusst so gewählt wurde: Die Firestore-Regeln erlauben aktuell offenen Zugriff, der Key
 ist damit technisch nicht geheim. Verschleierung schützt nur gegen zufälliges Mitlesen. Bei Verdacht:
 Key im Anthropic-Console rotieren, einmal neu eintragen – er verteilt sich dann von selbst.
+
+## Datenverlust-Historie (Recherche vom 31.08.2026)
+
+Es wurde erschöpfend nach den Rezepten gesucht, die zwischen dem 27.02.2026 und dem 12.08.2026
+hinzugefügt wurden. Sie existieren **nirgends** mehr. Geprüft und ausgeschlossen: Firestore
+(nur `app/shared` + `app/config`, per Konsole mit Admin-Sicht verifiziert), PITR und geplante
+Sicherungen (auf dem Spark-Tarif gar nicht verfügbar), lokale Browser-Speicher aller Profile
+dieses Rechners, 700 Claude-Chats, die komplette GitHub-Historie (25 Commits, nie Daten),
+Gmail und Google Drive. Nicht prüfbar waren die Handys – dafür existiert jetzt die Geräte-Rettung.
 
 ## Firestore-Regeln (Zeitbombe beachten)
 

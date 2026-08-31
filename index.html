@@ -545,9 +545,11 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg width='10
   <div class="divider"></div>
   <p class="section-label" style="margin-bottom:8px">🛟 Sicherung</p>
   <p id="backup-status" style="font-size:.75rem;color:var(--text-muted);margin-bottom:10px"></p>
-  <button class="btn btn-secondary btn-full" onclick="restoreBackupFromSettings()">↩️ Letzte Sicherung wiederherstellen</button>
+  <button class="btn btn-secondary btn-full" onclick="restoreBackupFromSettings()">↩️ Letzte Sicherung dieses Geräts</button>
+  <p style="font-size:.75rem;color:var(--text-muted);margin:12px 0 6px">☁️ Tägliche Sicherungen in der Datenbank – Zurückholen ergänzt nur fehlende Rezepte, es wird nie etwas gelöscht:</p>
+  <div id="cloud-backup-list" style="max-height:190px;overflow-y:auto"></div>
   <div class="divider"></div>
-  <button class="btn btn-danger btn-full" onclick="confirmResetAll()">🗑️ Alle Daten zurücksetzen</button>
+  <button class="btn btn-danger btn-full" onclick="confirmResetAll()">🗑️ Planer, Listen & Warenkorb leeren</button>
   <button class="btn btn-ghost btn-full mt-8" onclick="closeModal('modal-settings')">Schließen</button>
 </div></div>
 
@@ -648,6 +650,114 @@ let editingListId=null,editListItems=[];
 // ═══════════════════════════════════════
 // FIREBASE SYNC
 // ═══════════════════════════════════════
+// ─────────────────────────────────────────────────────────────
+// CLOUD-SICHERUNGEN
+// Firestore auf dem Gratis-Tarif hat KEINE eigenen Backups (weder
+// Point-in-Time-Recovery noch geplante Sicherungen – beides kostet).
+// Deshalb legt die App selbst täglich eine unveränderliche Kopie des
+// kompletten Zustands unter backups/JJJJ-MM-TT ab. Damit existiert
+// immer eine Historie, aus der sich jeder Stand zurückholen lässt.
+// ─────────────────────────────────────────────────────────────
+const BACKUP_COL = db.collection('backups');
+
+async function writeCloudBackup(){
+  if(!remoteLoaded||!recipes.length)return;
+  const id=new Date().toISOString().slice(0,10);      // eine Sicherung pro Tag
+  if(localStorage.getItem('kp_cb_'+id))return;        // dieses Gerät hat heute schon gesichert
+  try{
+    const ref=BACKUP_COL.doc(id);
+    const snap=await ref.get();
+    if(!snap.exists){
+      await ref.set({
+        recipes,weekPlans,floatingMeals,savedLists,defaultPortions,
+        recipeCount:recipes.length,
+        savedAt:new Date().toISOString()
+      });
+      console.log('Cloud-Sicherung angelegt:',id,recipes.length,'Rezepte');
+    }
+    localStorage.setItem('kp_cb_'+id,'1');
+  }catch(e){console.warn('Cloud-Sicherung fehlgeschlagen:',e)}
+}
+
+async function listCloudBackups(){
+  try{
+    // Bewusst ohne orderBy: eine absteigende Sortierung nach Dokument-ID
+    // braeuchte in Firestore einen zusaetzlichen Index. Die IDs sind Datumswerte,
+    // deshalb wird hier einfach im Client sortiert.
+    const snap=await BACKUP_COL.get();
+    return snap.docs
+      .map(d=>{const x=d.data()||{};return{id:d.id,count:x.recipeCount||(x.recipes||[]).length}})
+      .sort((a,b)=>b.id.localeCompare(a.id))
+      .slice(0,60);
+  }catch(e){console.warn('Sicherungen lesen:',e);return[]}
+}
+
+// Zusammenführen statt Ersetzen: eine Wiederherstellung kann nur Rezepte
+// hinzufügen, niemals vorhandene entfernen.
+function mergeRecipes(list){
+  const have=new Set(recipes.map(r=>r.id));
+  let added=0;
+  (list||[]).forEach(r=>{if(r&&r.id&&!have.has(r.id)){recipes.push(r);have.add(r.id);added++}});
+  return added;
+}
+
+async function restoreCloudBackup(id){
+  try{
+    const d=(await BACKUP_COL.doc(id).get()).data();
+    if(!d){toast('Sicherung nicht gefunden');return}
+    const added=mergeRecipes(d.recipes);
+    if(added){save();renderAll();toast('✅ '+added+' Rezepte aus '+id+' ergänzt')}
+    else toast('Diese Sicherung enthält nichts Neues');
+    renderBackupList();
+  }catch(e){toast('Fehler: '+e.message)}
+}
+
+async function renderBackupList(){
+  const el=document.getElementById('cloud-backup-list');if(!el)return;
+  el.innerHTML='<span style="font-size:.75rem;color:var(--text-muted)">Lade Sicherungen …</span>';
+  const list=await listCloudBackups();
+  if(!list.length){el.innerHTML='<span style="font-size:.75rem;color:var(--text-muted)">Noch keine Cloud-Sicherung vorhanden</span>';return}
+  el.innerHTML=list.map(b=>`<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
+    <span style="font-size:.8rem">${b.id} · <strong>${b.count}</strong> Rezepte</span>
+    <button class="btn btn-outline btn-sm" onclick="restoreCloudBackup('${b.id}')">Zurückholen</button>
+  </div>`).join('');
+}
+
+// ─────────────────────────────────────────────────────────────
+// GERÄTE-RETTUNG
+// Wenn auf DIESEM Gerät noch eine ältere Sicherung liegt, die Rezepte
+// enthält, die in der Datenbank fehlen, bietet die App sie zum Zurückholen
+// an. So bringt jedes Handy, das früher mehr Rezepte gesehen hat, diese
+// beim nächsten Öffnen von selbst zurück.
+// ─────────────────────────────────────────────────────────────
+function findLocalExtras(){
+  const sources=[];
+  const push=raw=>{try{const b=JSON.parse(raw);if(b)sources.push(b)}catch(e){}};
+  push(localStorage.getItem('kp_lastgood'));
+  push(localStorage.getItem('kp_backup'));
+  try{(JSON.parse(localStorage.getItem('kp_history'))||[]).forEach(h=>h&&h.data&&sources.push(h.data))}catch(e){}
+  const have=new Set(recipes.map(r=>r.id));
+  const extra=new Map();
+  sources.forEach(s=>(s.recipes||[]).forEach(r=>{
+    if(r&&r.id&&!have.has(r.id)&&!extra.has(r.id))extra.set(r.id,r);
+  }));
+  return [...extra.values()];
+}
+let pendingExtras=[];
+function offerLocalExtras(){
+  pendingExtras=findLocalExtras();
+  if(!pendingExtras.length)return;
+  showBanner('💡 Auf diesem Gerät liegen '+pendingExtras.length+' Rezepte, die in der Datenbank fehlen. '+
+    '<button onclick="recoverLocalExtras()" style="'+BTN_W+'">Zurückholen</button>'+
+    '<button onclick="dismissBanner()" style="'+BTN_G+'">Ignorieren</button>');
+}
+function recoverLocalExtras(){
+  const added=mergeRecipes(pendingExtras);
+  pendingExtras=[];
+  dismissBanner();
+  if(added){save();renderAll();toast('✅ '+added+' Rezepte zurückgeholt')}
+}
+
 function setSyncStatus(s){const d=document.getElementById('sync-dot');if(d)d.className='sync-dot '+(s||'')}
 
 // ─────────────────────────────────────────────────────────────
@@ -767,7 +877,11 @@ async function initFirebase(){
     remoteLoaded=true;
     lastGoodCounts={recipes:recipes.length,savedLists:savedLists.length};
     setSyncStatus('online');
-    if(incoming.length){writeLocalBackup();dismissBanner()}
+    if(incoming.length){
+      writeLocalBackup();dismissBanner();
+      writeCloudBackup();                 // tägliche unveränderliche Kopie in Firestore
+      setTimeout(offerLocalExtras,1200);  // fehlt hier lokal etwas, das die DB nicht hat?
+    }
     else if(backup&&backup.recipes.length){
       // Remote ist leer, lokal liegt ein guter Stand: anbieten statt still hinnehmen.
       showBanner('⚠️ Die Datenbank enthält keine Rezepte. Lokale Sicherung mit '+backup.recipes.length+' Rezepten vorhanden. <button onclick="restoreFromLocalBackup()" style="'+BTN_W+'">Wiederherstellen</button><button onclick="dismissBanner()" style="'+BTN_G+'">Ignorieren</button>');
@@ -1207,6 +1321,7 @@ function showSettings(){
   st.textContent=hasApiKey()?'✅ Claude-Key hinterlegt':'⚠️ Kein API-Key hinterlegt';
   st.style.color=hasApiKey()?'var(--green)':'var(--red)';
   updateKeyStatusUI();
+  renderBackupList();
   const bi=backupInfo(),be=document.getElementById('backup-status');
   if(be)be.textContent=bi?('Letzte lokale Sicherung: '+bi.count+' Rezepte'+(bi.savedAt?' · '+new Date(bi.savedAt).toLocaleString('de-DE'):'')):'Noch keine lokale Sicherung';
   openModal('modal-settings');
@@ -1254,7 +1369,10 @@ async function testApiKey(){
   }catch(e){st.textContent='❌ Verbindungsfehler';st.style.color='var(--red)'}
 }
 document.getElementById('setting-default-portions').addEventListener('change',function(){defaultPortions=parseInt(this.value)||2;save()});
-function confirmResetAll(){showConfirm('Alles löschen','Wirklich ALLE Daten löschen? Das betrifft beide Nutzer!',async()=>{recipes=[];weekPlans={};floatingMeals=[];savedLists=[];cart=[];defaultPortions=2;save({destructive:true});closeModal('modal-settings');renderAll();toast('Alles zurückgesetzt')})}
+// Rezepte werden hier bewusst NICHT mehr gelöscht – ein Fehlgriff hier war
+// nie der Auslöser, aber ein Ein-Klick-Totalverlust soll gar nicht erst möglich sein.
+// Einzelne Rezepte lassen sich weiterhin über das Papierkorb-Symbol entfernen.
+function confirmResetAll(){showConfirm('Zurücksetzen','Wochenplan, Listen und Warenkorb leeren? Die Rezepte bleiben erhalten.',async()=>{weekPlans={};floatingMeals=[];savedLists=[];cart=[];defaultPortions=2;save({destructive:true});closeModal('modal-settings');renderAll();toast('Planer, Listen und Warenkorb geleert')})}
 
 // ═══════════════════════════════════════
 // 💬 CHAT AI ASSISTANT (vollständiger Zugriff)
@@ -1659,7 +1777,7 @@ function executeChatActions(actions){
 //  Das hat Offline-Betrieb faktisch abgeschaltet – und genau ein Ladefehler
 //  war die Ursache des Datenverlusts.)
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js?v=11')
+  navigator.serviceWorker.register('sw.js?v=12')
     .then(reg=>{reg.update();setInterval(()=>reg.update(),60*60*1000)})
     .catch(e=>console.log('SW:',e));
 }
