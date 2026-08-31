@@ -92,7 +92,7 @@ in `localStorage` für den Offline-Fall. Dadurch muss der Key nur **einmal auf e
 werden und steht danach auf allen Geräten zur Verfügung. Ein Gerät, das noch einen lokalen Key hat,
 lädt ihn beim Start automatisch hoch (Migration), falls in Firestore noch keiner liegt.
 
-Trade-off, der bewusst so gewählt wurde: Die Firestore-Regeln erlauben aktuell offenen Zugriff, der Key
+Trade-off, der bewusst so gewählt wurde: Der Lese-/Schreibzugriff auf `app/config` ist offen, der Key
 ist damit technisch nicht geheim. Verschleierung schützt nur gegen zufälliges Mitlesen. Bei Verdacht:
 Key im Anthropic-Console rotieren, einmal neu eintragen – er verteilt sich dann von selbst.
 
@@ -105,15 +105,41 @@ Sicherungen (auf dem Spark-Tarif gar nicht verfügbar), lokale Browser-Speicher 
 dieses Rechners, 700 Claude-Chats, die komplette GitHub-Historie (25 Commits, nie Daten),
 Gmail und Google Drive. Nicht prüfbar waren die Handys – dafür existiert jetzt die Geräte-Rettung.
 
-## Firestore-Regeln (Zeitbombe beachten)
+## Firestore-Regeln – der harte Schutz
+
+Seit 31.08.2026 erzwingt die **Datenbank selbst**, dass Rezepte nicht verschwinden können.
+Kein Client – auch kein fehlerhafter – kann die Sammlung mehr leeren:
 
 ```
-allow read, write: if request.time < timestamp.date(2027, 3, 22);
+rules_version = '2';
+service cloud.firestore {
+match /databases/{database}/documents {
+match /app/shared {
+allow read: if true;
+allow create: if request.resource.data.get('recipes', []).size() > 0;
+allow update: if request.resource.data.get('recipes', []).size() > 0 && request.resource.data.get('recipes', []).size() * 2 >= resource.data.get('recipes', []).size();
+allow delete: if false;
+}
+match /app/config {
+allow read, write: if true;
+}
+match /backups/{snapshot} {
+allow read, create: if true;
+allow update, delete: if false;
+}
+}
+}
 ```
 
-Diese Regel **läuft am 22.03.2027 ab**. Genau so ist der erste Datenverlust entstanden. Ab Punkt 1–5 oben
-führt ein Ablauf nicht mehr zu Datenverlust, aber die App synchronisiert dann nicht mehr.
-Vor diesem Datum in der Firebase Console verlängern oder auf echte Auth umstellen.
+Konsequenzen, die man kennen muss:
+- Ein Schreibvorgang, der **0 Rezepte** enthält, wird mit HTTP 403 abgelehnt.
+- Ein Schreibvorgang, der **mehr als die Hälfte** der Rezepte auf einmal entfernt, wird abgelehnt.
+  Einzelne Rezepte löschen funktioniert weiter, alle auf einen Schlag nicht mehr.
+- `app/shared` kann nicht gelöscht werden.
+- Sicherungen unter `backups/` sind **unveränderlich**: anlegen ja, ändern und löschen nein.
+- Das alte Ablaufdatum (22.03.2027) ist entfernt – die Regeln laufen nicht mehr aus.
+
+Verifiziert am 31.08.2026 mit 12 Tests gegen die Live-Datenbank (`_backup/ruletest.js`).
 
 ## Features (Kurzüberblick)
 
